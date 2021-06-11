@@ -1,18 +1,19 @@
 import express from "express";
 import cors from "cors";
 import dayjs from "dayjs";
+import fs from "fs";
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
-
-let participants = [];
-let messages = [];
+let data = JSON.parse(fs.readFileSync("./data.json"));
+let messages = data.messages
+let participants = data.participants
 let countId = 0;
 
 function addParticipant(user){
-    messages.push({
+    data.messages.push({
         from: user,
         to: "Todos",
         text: "entra na sala...",
@@ -34,31 +35,31 @@ app.post('/participants',(req,res)=>{
     user.id = countId;
     user.lastStatus = Date.now();
     addParticipant(user.name);
-    participants.push(user);
+    data.participants.push(user)
+    fs.writeFileSync("./data.json", JSON.stringify(data));
     res.sendStatus(200);
 });
 
 app.get('/messages', (req,res)=>{
     const limit = +req.query.limit;
     const user = req.headers.user;
-    const filteredMessages = messages.filter((m) => {
+    const filteredMessages = data.messages.filter((m) => {
         return (m.type === "message" || m.to === "Todos" || m.to === user || m.from === user);
     });
     const lastMessages = filteredMessages.filter((m,i)=> i > messages.length - limit);
-    console.log(lastMessages)
     res.send(lastMessages)
 });
 
 app.post('/messages', (req,res)=>{
     const newmessage = req.body;
-    console.log(req.body);
     newmessage.from = req.headers.user;
     newmessage.time = dayjs().format("HH:mm:ss");
     if(newmessage.to === "") return res.status(400).send("Destinatário não pode estar vazio!");   
     if(newmessage.text === "") return res.status(400).send("Messagem não pode estar vazio!");
     const participant = participants.find((p) => p.name === newmessage.from);
     if(participant){
-        messages.push(newmessage);
+        data.messages.push(newmessage)
+        fs.writeFileSync("./data.json", JSON.stringify(data));
         res.sendStatus(200);
     }else{
         res.sendStatus(400);
@@ -67,7 +68,7 @@ app.post('/messages', (req,res)=>{
 
 app.post('/status', (req, res)=>{
     const user = req.headers.user;
-    const participant = participants.find((n)=>n.name === user)
+    const participant = participants.find((n)=>n.name === user);
     if(participant){
         participant.lastStatus = Date.now();
         res.sendStatus(200);
@@ -77,10 +78,9 @@ app.post('/status', (req, res)=>{
 });
 
 setInterval(()=>{
-    participants = participants.filter((p)=>{
-        if((Date.now() - p.lastStatus) > 10000){
-            return
-        } else{
+    const now = Date.now();
+    data.participants = participants.filter((p)=>{
+        if((now - p.lastStatus) > 10000){
             messages.push({
                 from: p.name,
                 to: "Todos",
@@ -88,9 +88,12 @@ setInterval(()=>{
                 type: "status",
                 time: dayjs().format("HH:mm:ss")
             })
-            return
+            return false
         }
+        return true
     })
+    participants = data.participants;
+    fs.writeFileSync("./data.json", JSON.stringify(data))
 }, 15000)
 
 app.listen(4000, ()=>{
